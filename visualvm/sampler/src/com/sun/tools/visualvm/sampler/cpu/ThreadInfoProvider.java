@@ -22,20 +22,23 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-
 package com.sun.tools.visualvm.sampler.cpu;
 
 import com.sun.tools.visualvm.application.Application;
 import com.sun.tools.visualvm.application.jvm.JvmFactory;
 import com.sun.tools.visualvm.core.datasupport.Stateful;
+import com.sun.tools.visualvm.profiling.presets.IgnoreCPUInfo;
 import com.sun.tools.visualvm.tools.jmx.JmxModel;
 import com.sun.tools.visualvm.tools.jmx.JmxModelFactory;
 import com.sun.tools.visualvm.tools.jmx.JvmMXBeans;
 import com.sun.tools.visualvm.tools.jmx.JvmMXBeansFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
+import java.lang.reflect.Field;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.openide.util.Exceptions;
 import org.openide.util.NbBundle;
 
 /**
@@ -45,13 +48,14 @@ import org.openide.util.NbBundle;
 public final class ThreadInfoProvider {
 
     private static final Logger LOGGER = Logger.getLogger(ThreadInfoProvider.class.getName());
-    
+    CPUSettingsSupport cpuSettings;
     final private String status;
     private boolean useGetThreadInfo;
     private ThreadMXBean threadBean;
-    
-    public ThreadInfoProvider(Application app) {
+
+    public ThreadInfoProvider(Application app, CPUSettingsSupport cpuSettings) {
         status = initialize(app);
+        this.cpuSettings = cpuSettings;
     }
 
     public String getStatus() {
@@ -61,7 +65,7 @@ public final class ThreadInfoProvider {
     public ThreadMXBean getThreadMXBean() {
         return threadBean;
     }
-    
+
     private String initialize(Application application) {
         if (application.getState() != Stateful.STATE_AVAILABLE) {
             return NbBundle.getMessage(ThreadInfoProvider.class, "MSG_unavailable"); // NOI18N
@@ -71,7 +75,7 @@ public final class ThreadInfoProvider {
             return NbBundle.getMessage(ThreadInfoProvider.class, "MSG_unavailable_init_jmx"); // NOI18N
         }
         if (jmxModel.getConnectionState() != JmxModel.ConnectionState.CONNECTED) {
-           return NbBundle.getMessage(ThreadInfoProvider.class, "MSG_unavailable_create_jmx"); // NOI18N
+            return NbBundle.getMessage(ThreadInfoProvider.class, "MSG_unavailable_create_jmx"); // NOI18N
         }
         JvmMXBeans mxbeans = JvmMXBeansFactory.getJvmMXBeans(jmxModel);
         if (mxbeans == null) {
@@ -97,10 +101,52 @@ public final class ThreadInfoProvider {
     }
 
     ThreadInfo[] dumpAllThreads() {
+        ThreadInfo[] result = null;
+
         if (useGetThreadInfo) {
-            return threadBean.getThreadInfo(threadBean.getAllThreadIds(), Integer.MAX_VALUE);
+            result = threadBean.getThreadInfo(threadBean.getAllThreadIds(), Integer.MAX_VALUE);
+        } else {
+            result = threadBean.dumpAllThreads(false, false);
         }
-        return threadBean.dumpAllThreads(false,false);
+        try {
+            if (cpuSettings != null) {
+                List<IgnoreCPUInfo> IgnoreCPUInfoList = cpuSettings.getIgnoreCpuInfoFilter();
+
+                Field fieldThreadState = ThreadInfo.class.getDeclaredField("threadState");
+                fieldThreadState.setAccessible(true);
+                for (int i = 0; i < result.length; i++) {
+                    ThreadInfo threadInfo = result[i];
+
+                    for (IgnoreCPUInfo ignoreCPUInfo : IgnoreCPUInfoList) {
+                        if (threadInfo.getThreadState() == Thread.State.RUNNABLE) {
+                            StackTraceElement[] stacks = threadInfo.getStackTrace();
+                            for (int j = 0; j < stacks.length && j < ignoreCPUInfo.getLevel(); j++) {
+                                StackTraceElement stackElement = stacks[j];
+                                if (stackElement.getClassName().startsWith(ignoreCPUInfo.getPackageclass())) {  // NOI18N
+                                    if (ignoreCPUInfo.getMethode()==null ||  stackElement.getMethodName().equals(ignoreCPUInfo.getMethode())) {
+                                        try {
+                                            fieldThreadState.set(threadInfo, Thread.State.WAITING);
+                                        } catch (IllegalArgumentException ex) {
+                                            Exceptions.printStackTrace(ex);
+                                        } catch (IllegalAccessException ex) {
+                                            Exceptions.printStackTrace(ex);
+                                        }
+                                        break;
+                                    }
+
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+        } catch (NoSuchFieldException ex) {
+            Exceptions.printStackTrace(ex);
+        } catch (SecurityException ex) {
+            Exceptions.printStackTrace(ex);
+        }
+        return result;
     }
 
 }

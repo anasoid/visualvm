@@ -482,7 +482,7 @@ final class SamplerImpl {
     private void initializeCpuSampling() {
         RequestProcessor.getDefault().post(new Runnable() {
             public void run() {
-                ThreadInfoProvider ti = new ThreadInfoProvider(application,cpuSettings);
+                ThreadInfoProvider ti = new ThreadInfoProvider(application);
                 final String status = ti.getStatus();
                 ThreadsCPU tcpu;
                 

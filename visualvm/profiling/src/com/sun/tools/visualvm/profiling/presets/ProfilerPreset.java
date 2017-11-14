@@ -38,6 +38,7 @@ public final class ProfilerPreset {
     private static final String PROP_SELECTOR = "prof_preset_selector"; // NOI18N
     private static final String PROP_FILTER_MODE_S = "prof_preset_filterMode_s"; // NOI18N
     private static final String PROP_FILTER_S = "prof_preset_filter_s"; // NOI18N
+    private static final String PROP_IGNORE_CPU_FILTER_S = "prof_preset_ignore_cpu_filter_s"; // NOI18N
     private static final String PROP_SAMPLING_RATE_S = "prof_preset_samplingRate_s"; // NOI18N
     private static final String PROP_REFRESH_RATE_S = "prof_preset_refreshRate_s"; // NOI18N
     private static final String PROP_SAMPLING_REFRESH_RATE_S = "prof_preset_samplingRefreshRate_s"; // NOI18N
@@ -54,6 +55,7 @@ public final class ProfilerPreset {
     private String selector;
     private boolean filterModeS;
     private String filterS;
+    private String ignoreCpuFilterS;
     private int samplingRateS;
     private int refreshRateS;
     private int samplingRefreshRateS;
@@ -72,6 +74,7 @@ public final class ProfilerPreset {
         this.selector = selector;
         this.filterModeS = true;
         this.filterS = ""; // NOI18N
+        this.ignoreCpuFilterS=""; // NOI18N
         this.samplingRateS = 100;
         this.refreshRateS = 1000;
         this.samplingRefreshRateS = 1000;
@@ -90,6 +93,7 @@ public final class ProfilerPreset {
         this.selector = preset.selector;
         this.filterModeS = preset.filterModeS;
         this.filterS = preset.filterS;
+        this.ignoreCpuFilterS=preset.ignoreCpuFilterS;
         this.samplingRateS = preset.samplingRateS;
         this.refreshRateS = preset.refreshRateS;
         this.samplingRefreshRateS = preset.samplingRefreshRateS;
@@ -108,6 +112,7 @@ public final class ProfilerPreset {
         selector = prefs.get(prefix + PROP_SELECTOR, ""); // NOI18N
         filterModeS = prefs.getBoolean(prefix + PROP_FILTER_MODE_S, true);
         filterS = prefs.get(prefix + PROP_FILTER_S, ""); // NOI18N
+        ignoreCpuFilterS = prefs.get(prefix + PROP_IGNORE_CPU_FILTER_S, ""); // NOI18N
         samplingRateS = prefs.getInt(prefix + PROP_SAMPLING_RATE_S, 100);
         refreshRateS = prefs.getInt(prefix + PROP_REFRESH_RATE_S, 1000);
         samplingRefreshRateS = prefs.getInt(prefix + PROP_SAMPLING_REFRESH_RATE_S, 1000);
@@ -126,6 +131,7 @@ public final class ProfilerPreset {
         prefs.put(prefix + PROP_SELECTOR, selector);
         prefs.putBoolean(prefix + PROP_FILTER_MODE_S, filterModeS);
         prefs.put(prefix + PROP_FILTER_S, filterS);
+        prefs.put(prefix + PROP_IGNORE_CPU_FILTER_S, ignoreCpuFilterS);
         prefs.putInt(prefix + PROP_SAMPLING_RATE_S, samplingRateS);
         prefs.putInt(prefix + PROP_REFRESH_RATE_S, refreshRateS);
         prefs.putInt(prefix + PROP_SAMPLING_REFRESH_RATE_S, samplingRefreshRateS);
@@ -175,10 +181,19 @@ public final class ProfilerPreset {
     public void setFilterS(String filter) {
         this.filterS = filter;
     }
-
+    
     public String getFilterS() {
         return filterS;
     }
+
+    public String getIgnoreCpuFilterS() {
+        return ignoreCpuFilterS;
+    }
+
+    public void setIgnoreCpuFilterS(String ignoreCpuFilterS) {
+        this.ignoreCpuFilterS = ignoreCpuFilterS;
+    }
+
 
     public void setSamplingRateS(int samplingRate) {
         this.samplingRateS = samplingRate;

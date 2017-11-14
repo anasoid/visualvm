@@ -22,7 +22,6 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-
 package com.sun.tools.visualvm.profiling.presets;
 
 import com.sun.tools.visualvm.core.ui.components.Spacer;
@@ -36,6 +35,8 @@ import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.text.NumberFormat;
+import java.util.ArrayList;
+import java.util.List;
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
@@ -63,99 +64,213 @@ import org.openide.util.NbBundle;
  * @author Jiri Sedlacek
  */
 public abstract class SamplerCPUPanel extends JPanel {
-    
+
     private JRadioButton inclFilterRadioButton;
     private JRadioButton exclFilterRadioButton;
     private TextAreaComponent filtersArea;
     private JLabel sampleRateLabel;
+    private JLabel ignoreCpuFilterLabel;
+    private TextAreaComponent ignoreCpuFilterArea;
     private JComboBox sampleRateCombo;
     private JLabel sampleRateUnitsLabel;
     private JLabel refreshRateLabel;
     private JLabel refreshUnitsLabel;
     private JComboBox refreshRateCombo;
-    
+    private List<IgnoreCPUInfo> IgnoreCpuInfoFilter =new ArrayList<IgnoreCPUInfo>();
     private final Runnable validator;
     private boolean filtersValid = true;
+    private boolean ignoreCpuFiltersValid = true;
     private boolean internalChange;
-    
-    
+
     public SamplerCPUPanel() {
         this(null, false);
     }
-    
+
     SamplerCPUPanel(Runnable validator, boolean mnemonics) {
         this.validator = validator;
         initComponents(mnemonics);
     }
-    
-    
+
     public ProfilingSettings getSettings() {
         ProfilingSettings settings = ProfilingSettingsPresets.createCPUPreset();
         settings.setInstrScheme(CommonConstants.INSTRSCHEME_LAZY);
-        
+
         String instrFilterString = getFilterValue();
-        SimpleFilter instrFilter = (instrFilterString.length() == 0 ||
-                "*".equals(instrFilterString)) ? SimpleFilter.NO_FILTER : // NOI18N
-            new SimpleFilter(instrFilterString, inclFilterRadioButton.isSelected() ?
-            SimpleFilter.SIMPLE_FILTER_INCLUSIVE : SimpleFilter.SIMPLE_FILTER_EXCLUSIVE,
-            instrFilterString);
+        SimpleFilter instrFilter = (instrFilterString.length() == 0
+                || "*".equals(instrFilterString)) ? SimpleFilter.NO_FILTER
+                : // NOI18N
+                new SimpleFilter(instrFilterString, inclFilterRadioButton.isSelected()
+                        ? SimpleFilter.SIMPLE_FILTER_INCLUSIVE : SimpleFilter.SIMPLE_FILTER_EXCLUSIVE,
+                        instrFilterString);
         settings.setSelectedInstrumentationFilter(instrFilter);
-        
+
         return settings;
     }
-    
+
     public int getSamplingRate() {
-        return (Integer)sampleRateCombo.getSelectedItem();
+        return (Integer) sampleRateCombo.getSelectedItem();
     }
-    
+
+    public List<IgnoreCPUInfo> getIgnoreCpuInfoFilter() {
+        return IgnoreCpuInfoFilter;
+    }
+
     public int getRefreshRate() {
-        return (Integer)refreshRateCombo.getSelectedItem();
+        return (Integer) refreshRateCombo.getSelectedItem();
     }
-    
-    
-    public boolean settingsValid() { return filtersValid; }
-    
+
+    public boolean settingsValid() {
+        return filtersValid && ignoreCpuFiltersValid;
+    }
+
     public void loadFromPreset(ProfilerPreset preset) {
-        if (preset == null) return;
+        if (preset == null) {
+            return;
+        }
 
         internalChange = true;
         inclFilterRadioButton.setSelected(!preset.getFilterModeS());
         exclFilterRadioButton.setSelected(preset.getFilterModeS());
         filtersArea.getTextArea().setText(preset.getFilterS());
+        ignoreCpuFilterArea.getTextArea().setText(preset.getIgnoreCpuFilterS());
+        checkCpuIgnoreFilterValidity();
         sampleRateCombo.setSelectedItem(preset.getSamplingRateS());
         refreshRateCombo.setSelectedItem(preset.getRefreshRateS());
         internalChange = false;
     }
-    
+
     public void saveToPreset(ProfilerPreset preset) {
-        if (preset == null) return;
-        
+        if (preset == null) {
+            return;
+        }
+
         preset.setFilterModeS(exclFilterRadioButton.isSelected());
         preset.setFilterS(filtersArea.getTextArea().getText());
-        preset.setSamplingRateS((Integer)sampleRateCombo.getSelectedItem());
-        preset.setRefreshRateS((Integer)refreshRateCombo.getSelectedItem());
+        preset.setIgnoreCpuFilterS(ignoreCpuFilterArea.getTextArea().getText());
+        preset.setSamplingRateS((Integer) sampleRateCombo.getSelectedItem());
+        preset.setRefreshRateS((Integer) refreshRateCombo.getSelectedItem());
     }
-    
+
     public abstract void settingsChanged();
-    
+
     private void syncUI() {
-        if (internalChange) return;
+        if (internalChange) {
+            return;
+        }
         settingsChanged();
     }
-    
-    
+
+    private void checkCpuIgnoreFilterValidity() {
+        ignoreCpuFiltersValid = isCpuIgnoreFilterValueValid();
+        ignoreCpuFilterArea.getTextArea().setForeground(ignoreCpuFiltersValid
+                ? UIManager.getColor("TextArea.foreground") : Color.RED); // NOI18N
+        if (validator != null) {
+            validator.run();
+        }
+    }
+
+    public boolean isCpuIgnoreFilterValueValid() {
+        String[] filterParts = FilterUtils.getSeparateFilters(getCpuIgnoreFilterValue());
+
+        for (int i = 0; i < filterParts.length; i++) {
+            if (!isValidCpuIgnoreFilter(filterParts[i])) {
+                IgnoreCpuInfoFilter.clear();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean isValidCpuIgnoreFilter(String filterPart) {
+        Integer level=null;
+        boolean methodePresent=false;
+        if (filterPart.length() < 1) {
+            return true; // Zero-length filter value
+        }
+        if (filterPart.contains("..")) {
+            return false; //NOI18N // Multiple dots (..)
+        }
+        if (filterPart.indexOf(".") > 0) {
+            String num = filterPart.substring(0, filterPart.indexOf("."));
+            try {
+               level= Integer.parseInt(num);
+                filterPart = filterPart.substring(filterPart.indexOf(".") + 1);
+            } catch (NumberFormatException e) {
+            }
+        }
+        if (filterPart.endsWith("()")) {
+
+            filterPart = filterPart.substring(0, filterPart.length() - 2);
+            methodePresent=true;
+            if (!filterPart.contains(".")) {
+                return false; //NOI18N // package must be present if function present
+            }
+
+        }
+        final char[] c = new char[filterPart.length()];
+        filterPart.getChars(0, filterPart.length(), c, 0);
+
+        if (!Character.isJavaIdentifierStart(c[0])) {
+            return false; // Incorrect first letter
+        }
+        for (int i = 1; i < (filterPart.length() - 1); ++i) {
+            if ((!Character.isJavaIdentifierPart(c[i])) && (!(c[i] == '.'))) {
+                return false; //NOI18N // Incorrect other letter
+            }
+        }
+        if ((!Character.isJavaIdentifierPart(c[filterPart.length() - 1]))) {
+            return false; //NOI18N // Incorrect other letter
+        }
+        if(methodePresent){
+            String methode=filterPart.substring(filterPart.lastIndexOf("."));
+            
+             IgnoreCpuInfoFilter.add(new IgnoreCPUInfo(level, filterPart.substring(0,filterPart.length()- methode.length()), methode));
+        }else{
+            IgnoreCpuInfoFilter.add(new IgnoreCPUInfo(level, filterPart, null));
+        }
+       
+        return true;
+    }
+
+    private String getCpuIgnoreFilterValue() {
+        StringBuilder convertedValue = new StringBuilder();
+
+        String[] cpuIgnoreFilterValue = getIgnoreCpuFilterValues();
+
+        for (int i = 0; i < cpuIgnoreFilterValue.length; i++) {
+            String filterValue = cpuIgnoreFilterValue[i].trim();
+
+            if ((i != (cpuIgnoreFilterValue.length - 1)) && !filterValue.endsWith(",")) { // NOI18N
+                filterValue = filterValue + ", "; // NOI18N
+            }
+
+            convertedValue.append(filterValue);
+        }
+
+        return convertedValue.toString();
+    }
+
+    private String[] getIgnoreCpuFilterValues() {
+        return ignoreCpuFilterArea.getTextArea().getText().split("\\n"); // NOI18N
+    }
+
     private void checkFilterValidity() {
         filtersValid = isFilterValueValid();
-        filtersArea.getTextArea().setForeground(filtersValid ?
-            UIManager.getColor("TextArea.foreground") : Color.RED); // NOI18N
-        if (validator != null) validator.run();
+        filtersArea.getTextArea().setForeground(filtersValid
+                ? UIManager.getColor("TextArea.foreground") : Color.RED); // NOI18N
+        if (validator != null) {
+            validator.run();
+        }
     }
 
     public boolean isFilterValueValid() {
         String[] filterParts = FilterUtils.getSeparateFilters(getFilterValue());
 
-        for (int i = 0; i < filterParts.length; i++)
-            if (!FilterUtils.isValidProfilerFilter(filterParts[i])) return false;
+        for (int i = 0; i < filterParts.length; i++) {
+            if (!FilterUtils.isValidProfilerFilter(filterParts[i])) {
+                return false;
+            }
+        }
 
         return true;
     }
@@ -181,13 +296,14 @@ public abstract class SamplerCPUPanel extends JPanel {
     private String[] getFilterValues() {
         return filtersArea.getTextArea().getText().split("\\n"); // NOI18N
     }
-    
-    
+
     public void setEnabled(boolean enabled) {
         super.setEnabled(enabled);
-        for (Component c : getComponents()) c.setEnabled(enabled);
+        for (Component c : getComponents()) {
+            c.setEnabled(enabled);
+        }
     }
-    
+
     private void initComponents(boolean mnemonics) {
         setOpaque(false);
         setLayout(new GridBagLayout());
@@ -200,8 +316,9 @@ public abstract class SamplerCPUPanel extends JPanel {
         JPanel radiosPanel = new JPanel(new GridBagLayout()) {
             public void setEnabled(boolean enabled) {
                 super.setEnabled(enabled);
-                for (Component c : getComponents())
+                for (Component c : getComponents()) {
                     c.setEnabled(enabled);
+                }
             }
         };
         radiosPanel.setOpaque(false);
@@ -214,8 +331,54 @@ public abstract class SamplerCPUPanel extends JPanel {
         constraints.insets = new Insets(0, 0, 0, 0);
         add(radiosPanel, constraints);
 
+        ignoreCpuFilterLabel = new JLabel();
+        setText(ignoreCpuFilterLabel, NbBundle.getMessage(SamplerCPUPanel.class,
+                "LBL_IGNORE_CPU_FILTER"), mnemonics); // NOI18N
+        ignoreCpuFilterLabel.setToolTipText(NbBundle.getMessage(
+                SamplerCPUPanel.class, "TOOLTIP_IGNORE_CPU_FILTER")); // NOI18N
+        constraints = new GridBagConstraints();
+        constraints.gridx = 0;
+        constraints.gridy = 1;
+        constraints.gridwidth = 1;
+        constraints.anchor = GridBagConstraints.WEST;
+        constraints.fill = GridBagConstraints.NONE;
+        constraints.insets = new Insets(10, 10, 5, 10);
+        add(ignoreCpuFilterLabel, constraints);
+
+        ignoreCpuFilterArea = createTextArea(2);
+        ignoreCpuFilterArea.getTextArea().setToolTipText(NbBundle.getMessage(
+                SamplerCPUPanel.class, "TOOLTIP_IGNORE_CPU_FILTER")); // NOI18N
+        ignoreCpuFilterArea.getTextArea().getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) {
+                checkCpuIgnoreFilterValidity();
+                syncUI();
+            }
+
+            public void removeUpdate(DocumentEvent e) {
+                checkCpuIgnoreFilterValidity();
+                syncUI();
+            }
+
+            public void changedUpdate(DocumentEvent e) {
+                checkCpuIgnoreFilterValidity();
+                syncUI();
+            }
+        });
+        constraints = new GridBagConstraints();
+        constraints.gridx = 0;
+        constraints.gridy = 2;
+        constraints.weightx = 1;
+        constraints.weighty = 1;
+        constraints.gridwidth = GridBagConstraints.REMAINDER;
+        constraints.anchor = GridBagConstraints.NORTHWEST;
+        constraints.fill = GridBagConstraints.BOTH;
+        constraints.insets = new Insets(0, 10, 10, 10);
+        add(ignoreCpuFilterArea, constraints);
+
         inclFilterRadioButton = new JRadioButton() {
-            protected void fireActionPerformed(ActionEvent e) { syncUI(); }
+            protected void fireActionPerformed(ActionEvent e) {
+                syncUI();
+            }
         };
         setText(inclFilterRadioButton, NbBundle.getMessage(SamplerCPUPanel.class,
                 "LBL_Profile_Incl_S"), mnemonics); // NOI18N
@@ -229,15 +392,17 @@ public abstract class SamplerCPUPanel extends JPanel {
         filterRadiosGroup.add(inclFilterRadioButton);
         constraints = new GridBagConstraints();
         constraints.gridx = 0;
-        constraints.gridy = 0;
+        constraints.gridy = 3;
         constraints.gridwidth = 1;
         constraints.anchor = GridBagConstraints.WEST;
         constraints.fill = GridBagConstraints.NONE;
-        constraints.insets = new Insets(10, 10, 5, 5);
+        constraints.insets = new Insets(5, 10, 5, 5);
         radiosPanel.add(inclFilterRadioButton, constraints);
 
         exclFilterRadioButton = new JRadioButton() {
-            protected void fireActionPerformed(ActionEvent e) { syncUI(); }
+            protected void fireActionPerformed(ActionEvent e) {
+                syncUI();
+            }
         };
         setText(exclFilterRadioButton, NbBundle.getMessage(SamplerCPUPanel.class,
                 "LBL_Profile_Excl_S"), mnemonics); // NOI18N
@@ -251,31 +416,31 @@ public abstract class SamplerCPUPanel extends JPanel {
         filterRadiosGroup.add(exclFilterRadioButton);
         constraints = new GridBagConstraints();
         constraints.gridx = 1;
-        constraints.gridy = 0;
+        constraints.gridy = 3;
         constraints.gridwidth = 1;
         constraints.anchor = GridBagConstraints.WEST;
         constraints.fill = GridBagConstraints.NONE;
-        constraints.insets = new Insets(10, 5, 5, 10);
+        constraints.insets = new Insets(5, 5, 5, 10);
         radiosPanel.add(exclFilterRadioButton, constraints);
-
-        constraints = new GridBagConstraints();
-        constraints.gridx = 2;
-        constraints.gridy = 0;
-        constraints.weightx = 1;
-        constraints.weighty = 1;
-        constraints.gridwidth = GridBagConstraints.REMAINDER;
-        constraints.anchor = GridBagConstraints.WEST;
-        constraints.fill = GridBagConstraints.HORIZONTAL;
-        constraints.insets = new Insets(10, 0, 5, 0);
-        radiosPanel.add(Spacer.create(), constraints);
 
         filtersArea = createTextArea(2);
         filtersArea.getTextArea().setToolTipText(NbBundle.getMessage(
                 SamplerCPUPanel.class, "TOOLTIP_Instrumentation_Filter")); // NOI18N
         filtersArea.getTextArea().getDocument().addDocumentListener(new DocumentListener() {
-            public void insertUpdate(DocumentEvent e) { checkFilterValidity(); syncUI(); }
-            public void removeUpdate(DocumentEvent e) { checkFilterValidity(); syncUI(); }
-            public void changedUpdate(DocumentEvent e) { checkFilterValidity(); syncUI(); }
+            public void insertUpdate(DocumentEvent e) {
+                checkFilterValidity();
+                syncUI();
+            }
+
+            public void removeUpdate(DocumentEvent e) {
+                checkFilterValidity();
+                syncUI();
+            }
+
+            public void changedUpdate(DocumentEvent e) {
+                checkFilterValidity();
+                syncUI();
+            }
         });
         constraints = new GridBagConstraints();
         constraints.gridx = 0;
@@ -302,18 +467,25 @@ public abstract class SamplerCPUPanel extends JPanel {
         constraints.insets = new Insets(5, 10, 5, 5);
         add(sampleRateLabel, constraints);
 
-        Integer[] samplingRates =
-            new Integer[] { 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000 };
+        Integer[] samplingRates
+                = new Integer[]{20, 50, 100, 200, 500, 1000, 2000, 5000, 10000};
         sampleRateCombo = new JComboBox(samplingRates) {
-            public Dimension getMinimumSize() { return getPreferredSize(); }
-            public Dimension getMaximumSize() { return getPreferredSize(); }
+            public Dimension getMinimumSize() {
+                return getPreferredSize();
+            }
+
+            public Dimension getMaximumSize() {
+                return getPreferredSize();
+            }
         };
         sampleRateLabel.setLabelFor(sampleRateCombo);
         sampleRateCombo.setToolTipText(NbBundle.getMessage(
                 SamplerCPUPanel.class, "TOOLTIP_Sampling_rate")); // NOI18N
         sampleRateCombo.setEditable(false);
         sampleRateCombo.addActionListener(new ActionListener() {
-            public void actionPerformed(ActionEvent e) { syncUI(); }
+            public void actionPerformed(ActionEvent e) {
+                syncUI();
+            }
         });
         sampleRateCombo.setRenderer(new ComboRenderer(sampleRateCombo));
         constraints = new GridBagConstraints();
@@ -361,17 +533,24 @@ public abstract class SamplerCPUPanel extends JPanel {
         constraints.insets = new Insets(1, 10, 10, 5);
         add(refreshRateLabel, constraints);
 
-        Integer[] refreshRates = new Integer[] { 100, 200, 500, 1000, 2000, 5000, 10000 };
+        Integer[] refreshRates = new Integer[]{100, 200, 500, 1000, 2000, 5000, 10000};
         refreshRateCombo = new JComboBox(refreshRates) {
-            public Dimension getMinimumSize() { return getPreferredSize(); }
-            public Dimension getMaximumSize() { return getPreferredSize(); }
+            public Dimension getMinimumSize() {
+                return getPreferredSize();
+            }
+
+            public Dimension getMaximumSize() {
+                return getPreferredSize();
+            }
         };
         refreshRateLabel.setLabelFor(refreshRateCombo);
         refreshRateCombo.setToolTipText(NbBundle.getMessage(
                 SamplerCPUPanel.class, "TOOLTIP_Refresh_rate")); // NOI18N
         refreshRateCombo.setEditable(false);
         refreshRateCombo.addActionListener(new ActionListener() {
-            public void actionPerformed(ActionEvent e) { syncUI(); }
+            public void actionPerformed(ActionEvent e) {
+                syncUI();
+            }
         });
         refreshRateCombo.setRenderer(new ComboRenderer(refreshRateCombo));
         constraints = new GridBagConstraints();
@@ -405,19 +584,23 @@ public abstract class SamplerCPUPanel extends JPanel {
         constraints.insets = new Insets(1, 0, 10, 0);
         add(Spacer.create(), constraints);
     }
-    
-    
+
     private static void setText(JLabel l, String text, boolean mnemonics) {
-        if (mnemonics) Mnemonics.setLocalizedText(l, text);
-        else l.setText(text.replace("&", "")); // NOI18N
+        if (mnemonics) {
+            Mnemonics.setLocalizedText(l, text);
+        } else {
+            l.setText(text.replace("&", "")); // NOI18N
+        }
     }
-    
+
     private static void setText(AbstractButton b, String text, boolean mnemonics) {
-        if (mnemonics) Mnemonics.setLocalizedText(b, text);
-        else b.setText(text.replace("&", "")); // NOI18N
+        if (mnemonics) {
+            Mnemonics.setLocalizedText(b, text);
+        } else {
+            b.setText(text.replace("&", "")); // NOI18N
+        }
     }
-    
-    
+
     private static TextAreaComponent createTextArea(int rows) {
         final JTextArea rootsArea = new JTextArea();
         rootsArea.setFont(new Font("Monospaced", Font.PLAIN, // NOI18N
@@ -428,6 +611,7 @@ public abstract class SamplerCPUPanel extends JPanel {
             public Dimension getMinimumSize() {
                 return getPreferredSize();
             }
+
             public void setEnabled(boolean enabled) {
                 super.setEnabled(enabled);
                 rootsArea.setEnabled(enabled);
@@ -439,17 +623,19 @@ public abstract class SamplerCPUPanel extends JPanel {
         referenceArea.setRows(rows);
         Insets insets = rootsAreaScrollPane.getInsets();
         rootsAreaScrollPane.setPreferredSize(new Dimension(1,
-                referenceArea.getPreferredSize().height + (insets != null ?
-                 insets.top + insets.bottom : 0)));
+                referenceArea.getPreferredSize().height + (insets != null
+                        ? insets.top + insets.bottom : 0)));
         return rootsAreaScrollPane;
     }
-    
+
     private static class TextAreaComponent extends JScrollPane {
+
         public TextAreaComponent(JTextArea textArea, int vPolicy, int hPolicy) {
             super(textArea, vPolicy, hPolicy);
         }
+
         public JTextArea getTextArea() {
-            return (JTextArea)getViewport().getView();
+            return (JTextArea) getViewport().getView();
         }
     }
 
@@ -459,13 +645,14 @@ public abstract class SamplerCPUPanel extends JPanel {
 
         ComboRenderer(JComboBox combo) {
             renderer = combo.getRenderer();
-            if (renderer instanceof JLabel)
-                ((JLabel)renderer).setHorizontalAlignment(JLabel.TRAILING);
+            if (renderer instanceof JLabel) {
+                ((JLabel) renderer).setHorizontalAlignment(JLabel.TRAILING);
+            }
         }
 
         public Component getListCellRendererComponent(JList list, Object value,
                 int index, boolean isSelected, boolean cellHasFocus) {
-            
+
             return renderer.getListCellRendererComponent(list, NumberFormat.
                     getInstance().format(value), index, isSelected, cellHasFocus);
         }

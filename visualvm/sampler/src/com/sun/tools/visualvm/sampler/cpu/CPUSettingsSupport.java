@@ -27,10 +27,12 @@ package com.sun.tools.visualvm.sampler.cpu;
 
 import com.sun.tools.visualvm.core.ui.components.DataViewComponent;
 import com.sun.tools.visualvm.core.ui.components.ScrollableContainer;
+import com.sun.tools.visualvm.profiling.presets.IgnoreCPUInfo;
 import com.sun.tools.visualvm.profiling.presets.PresetSelector;
 import com.sun.tools.visualvm.profiling.presets.SamplerCPUPanel;
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.JPanel;
 import org.netbeans.lib.profiler.common.ProfilingSettings;
@@ -59,6 +61,8 @@ public abstract class CPUSettingsSupport {
     public int getSamplingRate() { return panel.getSamplingRate(); }
     
     public int getRefreshRate() { return panel.getRefreshRate(); }
+    
+    public  List<IgnoreCPUInfo>  getIgnoreCpuInfoFilter() { return panel.getIgnoreCpuInfoFilter(); }
     
     public void saveSettings() {
         // NOTE: might save custom configuration here
